@@ -38,7 +38,8 @@
     "commands": [
       {
         "command": "gitChangedFiles.refresh",
-        "title": "Refresh Changed Files"
+        "title": "Refresh Changed Files",
+        "icon": "$(refresh)"
       },
       {
         "command": "branch-changes.helloWorld",
@@ -58,9 +59,14 @@
     "menus": {
       "view/title": [
         {
+          "command": "gitChangedFiles.refresh",
+          "when": "view == gitChangedFilesView",
+          "group": "navigation@1"
+        },
+        {
           "command": "gitChangedFiles.selectBranch",
           "when": "view == gitChangedFilesView",
-          "group": "navigation"
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
