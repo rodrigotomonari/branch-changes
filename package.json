@@ -6,6 +6,7 @@
     "name": "Rodrigo Tomonari"
   },
   "version": "0.0.1",
+  "icon": "resources/icon.png",
   "engines": {
     "vscode": "^1.98.0"
   },
@@ -28,7 +29,8 @@
       "explorer": [
         {
           "id": "gitChangedFilesView",
-          "name": "Changed Files"
+          "name": "Changed Files",
+          "icon": "resources/git.svg"
         }
       ]
     },
