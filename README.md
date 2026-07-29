@@ -1,6 +1,5 @@
 # Branch Changes
 
-[![VS Code Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/branch-changes.svg?style=flat&label=VS%20Code%20Marketplace&labelColor=007ACC)](https://marketplace.visualstudio.com/items?itemName=branch-changes)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 ## Overview
@@ -19,18 +18,25 @@ Branch Changes is a simple VS Code extension that helps developers track and vis
 
 ## Installation
 
-Install this extension directly from the VS Code Marketplace:
+This extension isn't published to the Marketplace. You can either install a built package into your normal VS Code, or run it from source for development.
 
-1. Open VS Code
-2. Go to Extensions (Ctrl+Shift+X)
-3. Search for "Branch Changes"
-4. Click Install
+### Install locally (.vsix)
 
-Or install using the VS Code Quick Open (Ctrl+P):
-
-```text
-ext install branch-changes
+```bash
+npm install
+npm run package
+code --install-extension branch-changes-0.0.1.vsix
 ```
+
+Reload VS Code afterwards and it'll show up under "branch-changes" in your Extensions list, just like a Marketplace install.
+
+### Run from source (for development)
+
+1. Clone the repo and run `npm install`.
+2. Open the folder in VS Code.
+3. Press `F5` to launch an Extension Development Host with the extension loaded.
+
+See [CLAUDE.md](CLAUDE.md) for the full list of build/lint/test commands.
 
 ## Usage
 
