@@ -12,6 +12,7 @@ import {
 } from "../git/git-utils";
 import { isGitRepository } from "../utils/workspace";
 import {
+  addFakeOrigin,
   createTempDir,
   createTempGitRepo,
   removeTempDir,
@@ -125,6 +126,65 @@ suite("git-utils", () => {
   test("getDefaultSourceBranch falls back to main when there is no upstream", async () => {
     run(repoDir, "git checkout -q -b feature");
     assert.strictEqual(await getDefaultSourceBranch(repoDir), "main");
+  });
+
+  test("getDefaultSourceBranch uses the remote's default branch", async () => {
+    addFakeOrigin(repoDir, "main");
+    run(repoDir, "git checkout -q -b feature");
+
+    assert.strictEqual(await getDefaultSourceBranch(repoDir), "main");
+  });
+
+  test("getDefaultSourceBranch ignores the current branch's own upstream", async () => {
+    // A pushed branch tracks itself, which says nothing about what it forked
+    // from, so it must not be reported as the source branch.
+    addFakeOrigin(repoDir, "main");
+    run(repoDir, "git checkout -q -b feature/my-work");
+    run(repoDir, "git update-ref refs/remotes/origin/feature/my-work HEAD");
+    run(repoDir, "git branch -q --set-upstream-to=origin/feature/my-work");
+
+    assert.strictEqual(await getDefaultSourceBranch(repoDir), "main");
+  });
+
+  test("getDefaultSourceBranch keeps the remote-tracking name when there is no local branch", async () => {
+    addFakeOrigin(repoDir, "trunk");
+    run(repoDir, "git checkout -q -b feature");
+
+    assert.strictEqual(
+      await getDefaultSourceBranch(repoDir),
+      "origin/trunk"
+    );
+  });
+
+  test("getDefaultSourceBranch prefers main over an alphabetically earlier develop", async () => {
+    run(repoDir, "git branch develop");
+    run(repoDir, "git checkout -q -b feature");
+
+    assert.strictEqual(await getDefaultSourceBranch(repoDir), "main");
+  });
+
+  test("getDefaultSourceBranch falls back to master when there is no main", async () => {
+    run(repoDir, "git branch develop");
+    run(repoDir, "git branch master");
+    run(repoDir, "git checkout -q -b feature");
+    run(repoDir, "git branch -q -D main");
+
+    assert.strictEqual(await getDefaultSourceBranch(repoDir), "master");
+  });
+
+  test("getDefaultSourceBranch is unaffected by a branch checked out in another worktree", async () => {
+    // Git marks such branches with "+" in `git branch` output.
+    const worktreeDir = createTempDir();
+    run(repoDir, "git branch develop");
+    run(repoDir, "git checkout -q -b feature");
+    run(repoDir, `git worktree add -q "${worktreeDir}/main" main`);
+
+    try {
+      assert.strictEqual(await getDefaultSourceBranch(repoDir), "main");
+    } finally {
+      run(repoDir, `git worktree remove --force "${worktreeDir}/main"`);
+      removeTempDir(worktreeDir);
+    }
   });
 });
 

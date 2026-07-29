@@ -65,58 +65,128 @@ export function getAllBranches(workspaceRoot: string): Promise<string[]> {
 }
 
 /**
+ * Branches to fall back on when the remote can't tell us its default,
+ * in the order we prefer them.
+ */
+const CANDIDATE_BASE_BRANCHES = ["main", "master", "develop"];
+
+/**
+ * Get the remote to consult, preferring "origin" when several exist
+ * @param workspaceRoot Path to the workspace root
+ * @returns Promise with the remote name, or null when there are no remotes
+ */
+async function getPreferredRemote(
+  workspaceRoot: string
+): Promise<string | null> {
+  try {
+    const remotes = (await executeGitCommand("git remote", workspaceRoot))
+      .split("\n")
+      .map((remote) => remote.trim())
+      .filter((remote) => remote !== "");
+
+    if (remotes.length === 0) {
+      return null;
+    }
+
+    return remotes.includes("origin") ? "origin" : remotes[0];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the branch the remote treats as its default, e.g. "origin/main".
+ * Reads the local <remote>/HEAD ref that `git clone` sets up, so this never
+ * touches the network.
+ * @param workspaceRoot Path to the workspace root
+ * @returns Promise with the remote-tracking branch name, or null when
+ *          <remote>/HEAD isn't set
+ */
+async function getRemoteDefaultBranch(
+  workspaceRoot: string
+): Promise<string | null> {
+  const remote = await getPreferredRemote(workspaceRoot);
+
+  if (!remote) {
+    return null;
+  }
+
+  try {
+    const branch = await executeGitCommand(
+      `git symbolic-ref --short refs/remotes/${remote}/HEAD`,
+      workspaceRoot
+    );
+
+    return branch.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check whether a local branch exists
+ * @param workspaceRoot Path to the workspace root
+ * @param branch Branch name to look for
+ */
+async function localBranchExists(
+  workspaceRoot: string,
+  branch: string
+): Promise<boolean> {
+  try {
+    await executeGitCommand(
+      `git rev-parse --verify --quiet refs/heads/${branch}`,
+      workspaceRoot
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Detect the default source branch to compare against
  * @param workspaceRoot Path to the workspace root
  * @returns Promise with the default source branch name
  */
-export function getDefaultSourceBranch(workspaceRoot: string): Promise<string> {
+export async function getDefaultSourceBranch(
+  workspaceRoot: string
+): Promise<string> {
   if (!isGitRepository(workspaceRoot)) {
-    return Promise.resolve("main"); // Default when not in a Git repo
+    return "main"; // Default when not in a Git repo
   }
 
-  return new Promise((resolve) => {
-    // Try to get the tracking branch first
-    executeGitCommand(
-      "git for-each-ref --format='%(upstream:short)' \"$(git symbolic-ref -q HEAD)\"",
-      workspaceRoot
-    )
-      .then((upstream) => {
-        if (upstream) {
-          // Remove remote part if present (e.g., origin/main -> main)
-          const sourceBranch = upstream.includes("/")
-            ? upstream.split("/")[1]
-            : upstream;
-          resolve(sourceBranch);
-          return sourceBranch; // Return the value to maintain Promise chain
-        }
+  // The remote's default branch is what a merge request would target, so it is
+  // the best answer when the repository knows it. Note this deliberately does
+  // not consult the current branch's upstream: once a branch has been pushed
+  // its upstream is its own remote-tracking branch, not the branch it forked
+  // from.
+  const remoteDefault = await getRemoteDefaultBranch(workspaceRoot);
 
-        // If no tracking branch, look for common base branches
-        return executeGitCommand(
-          "git branch -l main master develop",
-          workspaceRoot
-        );
-      })
-      .then((branches) => {
-        if (!branches) {
-          resolve("main"); // Default fallback
-          return;
-        }
+  if (remoteDefault) {
+    // Prefer the local branch of the same name, so the result matches an entry
+    // in the branch picker (which only lists local branches). Strip just the
+    // remote, keeping any slashes in the branch name itself.
+    const localName = remoteDefault.replace(/^[^/]+\//, "");
 
-        const branchList = branches
-          .split("\n")
-          .map((b) => b.trim().replace("* ", ""))
-          .filter((b) => b !== "");
+    if (await localBranchExists(workspaceRoot, localName)) {
+      return localName;
+    }
 
-        if (branchList.length > 0) {
-          resolve(branchList[0]);
-          return;
-        }
+    // No local counterpart, but a remote-tracking branch is still a perfectly
+    // good revision to diff against.
+    return remoteDefault;
+  }
 
-        // Last resort
-        resolve("main");
-      })
-      .catch(() => resolve("main")); // Default fallback on error
-  });
+  // Nothing to ask, so try the conventional base branches. These are checked
+  // in preference order; listing them in one `git branch` call would return
+  // them sorted by name instead.
+  for (const candidate of CANDIDATE_BASE_BRANCHES) {
+    if (await localBranchExists(workspaceRoot, candidate)) {
+      return candidate;
+    }
+  }
+
+  return "main"; // Last resort
 }
 
 /**
