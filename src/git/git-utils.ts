@@ -273,7 +273,13 @@ export function getCommittedFiles(
     return Promise.resolve([]);
   }
 
-  const gitCommand = `git diff --name-only $(git merge-base HEAD ${sourceBranch})..HEAD 2>&1`;
+  // The three-dot form means "changes on HEAD since it diverged from
+  // sourceBranch", i.e. exactly `merge-base(sourceBranch, HEAD)..HEAD`, but in
+  // a single command. Doing it in one command matters: `$(...)` substitution
+  // isn't supported by cmd.exe on Windows, and when the substitution fails the
+  // command silently degrades to `..HEAD`, which reports no changes at all.
+  // The trailing `--` keeps a branch name from being read as a path.
+  const gitCommand = `git diff --name-only ${sourceBranch}...HEAD --`;
 
   return executeGitCommand(gitCommand, workspaceRoot)
     .then((output) => {
