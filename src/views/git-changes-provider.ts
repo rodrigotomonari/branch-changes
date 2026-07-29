@@ -9,20 +9,19 @@ import {
   getCurrentBranch,
   getAllBranches,
   getDefaultSourceBranch,
-  getStagedFiles,
-  getUnstagedFiles,
+  getWorkingTreeChanges,
   getCommittedFiles,
-  getUntrackedFiles,
 } from "../git/git-utils";
 
 /**
  * Provider for the Git Changed Files Tree View
  */
 export class GitChangedFilesProvider
-  implements vscode.TreeDataProvider<vscode.TreeItem>
+  implements vscode.TreeDataProvider<vscode.TreeItem>, vscode.Disposable
 {
-  // Track the last known branch
-  lastKnownBranch: string | null = null;
+  // How long to wait for a burst of change events to settle before
+  // rebuilding. Also gives git time to finish writing after a save.
+  private static readonly REFRESH_DEBOUNCE_MS = 300;
 
   // Store selected comparison branch
   selectedComparisonBranch: string | null = null;
@@ -35,6 +34,9 @@ export class GitChangedFilesProvider
   // half-populated rootFolder as "already built".
   private buildPromise: Promise<void> | null = null;
 
+  // Pending debounced refresh, if any
+  private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
   private _onDidChangeTreeData: vscode.EventEmitter<
     vscode.TreeItem | null | undefined
   > = new vscode.EventEmitter<vscode.TreeItem | null | undefined>();
@@ -44,12 +46,49 @@ export class GitChangedFilesProvider
   > = this._onDidChangeTreeData.event;
 
   /**
-   * Refresh the tree view
+   * Refresh the tree view immediately
    */
   refresh(): void {
+    this.cancelScheduledRefresh();
     console.log("Refreshing Git changed files view");
     this.rootFolder = null; // Clear the cache
     this._onDidChangeTreeData.fire(undefined);
+  }
+
+  /**
+   * Request a refresh, coalescing calls that arrive close together.
+   *
+   * Change events come from several redundant sources (the Git API, three file
+   * watchers, a poller, workspace events), and a single user action — or just
+   * opening a window, while the Git extension scans the repository — fires
+   * several of them. Rebuilding once per event would run the whole set of git
+   * commands repeatedly for one logical change.
+   */
+  scheduleRefresh(): void {
+    this.cancelScheduledRefresh();
+
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = undefined;
+      this.refresh();
+    }, GitChangedFilesProvider.REFRESH_DEBOUNCE_MS);
+  }
+
+  /**
+   * Drop a pending debounced refresh
+   */
+  private cancelScheduledRefresh(): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = undefined;
+    }
+  }
+
+  /**
+   * Release resources held by the provider
+   */
+  dispose(): void {
+    this.cancelScheduledRefresh();
+    this._onDidChangeTreeData.dispose();
   }
 
   /**
@@ -143,10 +182,6 @@ export class GitChangedFilesProvider
 
     // Root level - show branch selector and file tree
     try {
-      // Get the current branch name
-      const currentBranch = await getCurrentBranch(workspaceRoot);
-      this.lastKnownBranch = currentBranch;
-
       // If no comparison branch is selected, try to auto-detect
       if (!this.selectedComparisonBranch) {
         this.selectedComparisonBranch = await getDefaultSourceBranch(
@@ -217,34 +252,24 @@ export class GitChangedFilesProvider
 
     try {
       // Get all changed files
-      const stagedFiles = await getStagedFiles(workspaceRoot);
-      const unstagedFiles = await getUnstagedFiles(workspaceRoot);
+      const { staged, unstaged, untracked } = await getWorkingTreeChanges(
+        workspaceRoot
+      );
       const committedFiles = await getCommittedFiles(
         workspaceRoot,
         this.selectedComparisonBranch!
       );
-      const untrackedFiles = await getUntrackedFiles(workspaceRoot);
 
       // Add all files to the folder structure
-      this.addFilesToTree(root, stagedFiles, FileStatus.STAGED, workspaceRoot);
-      this.addFilesToTree(
-        root,
-        unstagedFiles,
-        FileStatus.UNSTAGED,
-        workspaceRoot
-      );
+      this.addFilesToTree(root, staged, FileStatus.STAGED, workspaceRoot);
+      this.addFilesToTree(root, unstaged, FileStatus.UNSTAGED, workspaceRoot);
       this.addFilesToTree(
         root,
         committedFiles,
         FileStatus.COMMITTED,
         workspaceRoot
       );
-      this.addFilesToTree(
-        root,
-        untrackedFiles,
-        FileStatus.UNTRACKED,
-        workspaceRoot
-      );
+      this.addFilesToTree(root, untracked, FileStatus.UNTRACKED, workspaceRoot);
     } catch (error) {
       console.error("Error building file tree:", error);
     }

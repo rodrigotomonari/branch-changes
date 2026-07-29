@@ -25,6 +25,21 @@ export function createTempGitRepo(): string {
 }
 
 /**
+ * Give a fixture repo an "origin" remote whose default branch is
+ * `defaultBranch`, without any network access: the remote-tracking ref and
+ * origin/HEAD are written directly, which is the state `git clone` leaves
+ * behind.
+ */
+export function addFakeOrigin(dir: string, defaultBranch: string): void {
+  run(dir, "git remote add origin https://example.invalid/repo.git");
+  run(dir, `git update-ref refs/remotes/origin/${defaultBranch} HEAD`);
+  run(
+    dir,
+    `git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/${defaultBranch}`
+  );
+}
+
+/**
  * Run a shell command in the given directory and return trimmed stdout.
  */
 export function run(cwd: string, command: string): string {

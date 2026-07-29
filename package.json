@@ -38,24 +38,44 @@
     "commands": [
       {
         "command": "gitChangedFiles.refresh",
-        "title": "Refresh Changed Files"
-      },
-      {
-        "command": "branch-changes.helloWorld",
-        "title": "Hello World"
+        "title": "Refresh Changed Files",
+        "icon": "$(refresh)"
       },
       {
         "command": "gitChangedFiles.selectBranch",
         "title": "Select Comparison Branch",
         "icon": "$(git-branch)"
+      },
+      {
+        "command": "gitChangedFiles.openDiff",
+        "title": "Open Changes",
+        "icon": "$(git-compare)"
       }
     ],
     "menus": {
       "view/title": [
         {
+          "command": "gitChangedFiles.refresh",
+          "when": "view == gitChangedFilesView",
+          "group": "navigation@1"
+        },
+        {
           "command": "gitChangedFiles.selectBranch",
           "when": "view == gitChangedFilesView",
-          "group": "navigation"
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "gitChangedFiles.openDiff",
+          "when": "view == gitChangedFilesView && viewItem =~ /^(staged|unstaged|committed)File$/",
+          "group": "inline"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "gitChangedFiles.openDiff",
+          "when": "false"
         }
       ]
     }
