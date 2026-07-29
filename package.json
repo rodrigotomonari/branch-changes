@@ -2,9 +2,6 @@
   "name": "branch-changes",
   "displayName": "branch-changes",
   "description": "See all the file diffs between the current branch and a selected branch.",
-  "author": {
-    "name": "Rodrigo Tomonari"
-  },
   "version": "0.0.1",
   "icon": "resources/icon.png",
   "engines": {
