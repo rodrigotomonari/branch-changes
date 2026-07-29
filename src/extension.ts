@@ -15,6 +15,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Create tree data provider
   const treeDataProvider = new GitChangedFilesProvider();
+  context.subscriptions.push(treeDataProvider);
 
   // Register the tree data provider for our view
   vscode.window.registerTreeDataProvider(
@@ -28,11 +29,11 @@ export async function activate(context: vscode.ExtensionContext) {
   // Register commands
   registerCommands(context, treeDataProvider);
 
-  // Set up file watchers for git repository changes
-  await setupGitBranchWatcher(
-    context,
-    () => treeDataProvider.refresh(),
-    () => treeDataProvider.lastKnownBranch
+  // Set up file watchers for git repository changes. These all funnel into the
+  // debounced refresh: they overlap by design, so a single change usually
+  // trips more than one of them.
+  await setupGitBranchWatcher(context, () =>
+    treeDataProvider.scheduleRefresh()
   );
 
   // Set up workspace event listeners
@@ -103,12 +104,11 @@ function setupWorkspaceListeners(
   context: vscode.ExtensionContext,
   treeDataProvider: GitChangedFilesProvider
 ): void {
-  // Refresh when files are saved with a small delay
+  // Refresh when files are saved
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((document) => {
       console.log("File saved:", document.fileName);
-      // Add a small delay to allow git to process the change
-      setTimeout(() => treeDataProvider.refresh(), 300);
+      treeDataProvider.scheduleRefresh();
     })
   );
 
@@ -129,7 +129,7 @@ function setupFileChangeListeners(
   context.subscriptions.push(
     vscode.workspace.onDidCreateFiles(() => {
       console.log("Files created, refreshing view");
-      setTimeout(() => treeDataProvider.refresh(), 300);
+      treeDataProvider.scheduleRefresh();
     })
   );
 
@@ -137,7 +137,7 @@ function setupFileChangeListeners(
   context.subscriptions.push(
     vscode.workspace.onDidDeleteFiles(() => {
       console.log("Files deleted, refreshing view");
-      setTimeout(() => treeDataProvider.refresh(), 300);
+      treeDataProvider.scheduleRefresh();
     })
   );
 
@@ -145,7 +145,7 @@ function setupFileChangeListeners(
   context.subscriptions.push(
     vscode.workspace.onDidRenameFiles(() => {
       console.log("Files renamed, refreshing view");
-      setTimeout(() => treeDataProvider.refresh(), 300);
+      treeDataProvider.scheduleRefresh();
     })
   );
 }

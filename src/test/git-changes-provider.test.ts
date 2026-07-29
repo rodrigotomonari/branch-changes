@@ -2,6 +2,7 @@ import * as assert from "assert";
 import * as vscode from "vscode";
 import { GitChangedFilesProvider } from "../views/git-changes-provider";
 import { FileItem, FolderItem, FileStatus } from "../views/tree-items";
+import { delay } from "../utils/workspace";
 import { resetGitRepo, run, writeFile } from "./git-fixture";
 
 function workspaceRoot(): string {
@@ -34,6 +35,7 @@ suite("GitChangedFilesProvider", () => {
   });
 
   teardown(() => {
+    provider.dispose();
     resetGitRepo(root);
   });
 
@@ -127,6 +129,48 @@ suite("GitChangedFilesProvider", () => {
 
     assert.ok(findFile(first, "untracked.txt"));
     assert.ok(findFile(second, "untracked.txt"));
+  });
+
+  test("scheduleRefresh coalesces a burst of events into one refresh", async () => {
+    await provider.getChildren();
+
+    let refreshCount = 0;
+    provider.onDidChangeTreeData(() => refreshCount++);
+
+    // Stand in for the several watchers that all fire for one logical change.
+    for (let i = 0; i < 10; i++) {
+      provider.scheduleRefresh();
+    }
+
+    assert.strictEqual(refreshCount, 0, "should not refresh synchronously");
+
+    await delay(600);
+    assert.strictEqual(refreshCount, 1);
+  });
+
+  test("scheduleRefresh still rebuilds the tree", async () => {
+    await provider.getChildren();
+    writeFile(root, "later.txt", "content");
+
+    provider.scheduleRefresh();
+    await delay(600);
+
+    assert.ok(findFile(await provider.getChildren(), "later.txt"));
+  });
+
+  test("refresh() supersedes a pending scheduled refresh", async () => {
+    await provider.getChildren();
+
+    let refreshCount = 0;
+    provider.onDidChangeTreeData(() => refreshCount++);
+
+    provider.scheduleRefresh();
+    provider.refresh();
+
+    assert.strictEqual(refreshCount, 1, "refresh() should fire immediately");
+
+    await delay(600);
+    assert.strictEqual(refreshCount, 1, "the queued refresh should be dropped");
   });
 
   test("selectComparisonBranch updates the selection and refreshes", async () => {

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
-import { exec } from "child_process";
+import { Repository } from "../git";
 import { getBuiltInGitApi } from "./git-utils";
 import { getWorkspaceRoot, isGitRepository } from "../utils/workspace";
 
@@ -9,13 +9,11 @@ import { getWorkspaceRoot, isGitRepository } from "../utils/workspace";
  * Sets up watchers to detect Git branch changes
  * @param context Extension context
  * @param refreshCallback Function to call when changes are detected
- * @param lastKnownBranchGetter Function to get the last known branch
  * @returns Promise that resolves when setup is complete
  */
 export async function setupGitBranchWatcher(
   context: vscode.ExtensionContext,
-  refreshCallback: () => void,
-  lastKnownBranchGetter: () => string | null
+  refreshCallback: () => void
 ): Promise<void> {
   const workspaceRoot = getWorkspaceRoot();
 
@@ -48,14 +46,6 @@ export async function setupGitBranchWatcher(
 
   // Set up file system watchers
   setupFileSystemWatchers(context, workspaceRoot, refreshCallback);
-
-  // Set up fallback poller for environments where file watchers don't work
-  setupFallbackBranchPoller(
-    context,
-    workspaceRoot,
-    refreshCallback,
-    lastKnownBranchGetter
-  );
 }
 
 /**
@@ -67,12 +57,26 @@ async function setupGitApiWatcher(
 ): Promise<void> {
   const gitAPI = await getBuiltInGitApi();
 
-  gitAPI?.onDidOpenRepository((repo) => {
-    repo.state.onDidChange(() => {
-      console.log("Repository state changed, refreshing view");
-      refreshCallback();
-    });
-  });
+  if (!gitAPI) {
+    return;
+  }
+
+  const watchRepository = (repo: Repository): void => {
+    context.subscriptions.push(
+      repo.state.onDidChange(() => {
+        console.log("Repository state changed, refreshing view");
+        refreshCallback();
+      })
+    );
+  };
+
+  // Repositories the Git extension has already opened. This is the usual case
+  // on startup: onDidOpenRepository only fires for repositories opened after
+  // we subscribe, so without this the API watcher would sit idle whenever the
+  // Git extension finished scanning before we got here.
+  gitAPI.repositories.forEach(watchRepository);
+
+  context.subscriptions.push(gitAPI.onDidOpenRepository(watchRepository));
 }
 
 /**
@@ -152,35 +156,3 @@ function setupRefsWatcher(
   }
 }
 
-/**
- * Sets up a fallback poller for environments where file watchers don't work
- */
-function setupFallbackBranchPoller(
-  context: vscode.ExtensionContext,
-  workspaceRoot: string,
-  refreshCallback: () => void,
-  lastKnownBranchGetter: () => string | null
-): void {
-  // Alternative: poll for branch changes periodically
-  const branchPoller = setInterval(() => {
-    const lastKnownBranch = lastKnownBranchGetter();
-
-    if (lastKnownBranch) {
-      exec(
-        "git rev-parse --abbrev-ref HEAD",
-        { cwd: workspaceRoot },
-        (error, currentBranch) => {
-          if (!error && currentBranch.trim() !== lastKnownBranch) {
-            console.log(
-              `Branch changed from ${lastKnownBranch} to ${currentBranch.trim()}`
-            );
-            refreshCallback();
-          }
-        }
-      );
-    }
-  }, 5000); // Check every 5 seconds
-
-  // Register the interval for disposal
-  context.subscriptions.push({ dispose: () => clearInterval(branchPoller) });
-}
