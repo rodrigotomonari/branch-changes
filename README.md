@@ -64,7 +64,3 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-If you encounter any problems or have suggestions, please [open an issue](https://github.com/lterodde320/branch-changes/issues) on GitHub.
