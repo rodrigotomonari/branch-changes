@@ -2,14 +2,8 @@
   "name": "branch-changes",
   "displayName": "branch-changes",
   "description": "See all the file diffs between the current branch and a selected branch.",
-  "publisher": "lterodde",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/lterodde320/branch-changes.git"
-  },
   "author": {
-    "name": "Leandro Terodde",
-    "email": "leandro@terodde.lu"
+    "name": "Rodrigo Tomonari"
   },
   "version": "0.0.1",
   "engines": {
@@ -72,14 +66,14 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.98.0",
     "@types/mocha": "^10.0.10",
-    "@types/node": "20.x",
+    "@types/node": "^20.19.43",
+    "@types/vscode": "^1.98.0",
     "@typescript-eslint/eslint-plugin": "^8.25.0",
     "@typescript-eslint/parser": "^8.25.0",
-    "eslint": "^9.21.0",
-    "typescript": "^5.7.3",
-    "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.4.1"
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "eslint": "^10.8.0",
+    "typescript": "^5.7.3"
   }
 }
