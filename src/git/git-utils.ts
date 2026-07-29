@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { exec, execFile } from "child_process";
 import * as vscode from "vscode";
 import { GitExtension, API } from "../git";
 import { isGitRepository } from "../utils/workspace";
@@ -186,6 +186,77 @@ export function getUntrackedFiles(workspaceRoot: string): Promise<string[]> {
       console.log("Git error getting untracked files:", error);
       return [];
     });
+}
+
+/**
+ * Get the common ancestor commit between HEAD and the source branch
+ * @param workspaceRoot Path to the workspace root
+ * @param sourceBranch Source branch to compare against
+ * @returns Promise with the merge base commit hash, or null if it can't be found
+ */
+export function getMergeBase(
+  workspaceRoot: string,
+  sourceBranch: string
+): Promise<string | null> {
+  if (!isGitRepository(workspaceRoot)) {
+    return Promise.resolve(null);
+  }
+
+  return executeGitCommand(
+    `git merge-base HEAD ${sourceBranch}`,
+    workspaceRoot
+  )
+    .then((output) => output.trim() || null)
+    .catch((error) => {
+      console.log("Git error getting merge base:", error);
+      return null;
+    });
+}
+
+/**
+ * Read the contents of a file as of a given Git revision.
+ *
+ * Unlike executeGitCommand this uses execFile (no shell, no trimming) because
+ * the exact bytes matter for a diff: trailing newlines are significant and
+ * paths must not be re-interpreted by the shell.
+ * @param workspaceRoot Path to the workspace root
+ * @param filePath Repository-relative path of the file
+ * @param ref Git revision (commit hash or branch name)
+ * @returns Promise with the file contents, or an empty string when the file
+ *          does not exist at that revision
+ */
+export function getFileAtRevision(
+  workspaceRoot: string,
+  filePath: string,
+  ref: string
+): Promise<string> {
+  if (!isGitRepository(workspaceRoot)) {
+    return Promise.resolve("");
+  }
+
+  return new Promise((resolve) => {
+    execFile(
+      "git",
+      ["show", `${ref}:${filePath}`],
+      {
+        cwd: workspaceRoot,
+        encoding: "utf8",
+        maxBuffer: 100 * 1024 * 1024,
+      },
+      (error, stdout) => {
+        if (error) {
+          // The file doesn't exist at this revision, which is the normal case
+          // for a file added on this branch. An empty left-hand side makes the
+          // whole file read as added.
+          console.log(`No content for ${filePath} at ${ref}:`, error.message);
+          resolve("");
+          return;
+        }
+
+        resolve(stdout);
+      }
+    );
+  });
 }
 
 /**

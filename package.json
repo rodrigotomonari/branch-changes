@@ -48,6 +48,11 @@
         "command": "gitChangedFiles.selectBranch",
         "title": "Select Comparison Branch",
         "icon": "$(git-branch)"
+      },
+      {
+        "command": "gitChangedFiles.openDiff",
+        "title": "Open Changes",
+        "icon": "$(git-compare)"
       }
     ],
     "menus": {
@@ -56,6 +61,19 @@
           "command": "gitChangedFiles.selectBranch",
           "when": "view == gitChangedFilesView",
           "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "gitChangedFiles.openDiff",
+          "when": "view == gitChangedFilesView && viewItem =~ /^(staged|unstaged|committed)File$/",
+          "group": "inline"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "gitChangedFiles.openDiff",
+          "when": "false"
         }
       ]
     }

@@ -1,7 +1,10 @@
 import * as vscode from "vscode";
-import { delay } from "./utils/workspace";
+import { checkGitRepository, delay } from "./utils/workspace";
 import { GitChangedFilesProvider } from "./views/git-changes-provider";
 import { setupGitBranchWatcher } from "./git/branch-watcher";
+import { openFileDiff, registerRevisionContentProvider } from "./git/diff";
+import { getDefaultSourceBranch } from "./git/git-utils";
+import { FileItem } from "./views/tree-items";
 
 /**
  * Main extension activation
@@ -18,6 +21,9 @@ export async function activate(context: vscode.ExtensionContext) {
     "gitChangedFilesView",
     treeDataProvider
   );
+
+  // Serve past revisions of files for the diff editor
+  registerRevisionContentProvider(context);
 
   // Register commands
   registerCommands(context, treeDataProvider);
@@ -56,6 +62,33 @@ function registerCommands(
       "gitChangedFiles.selectBranch",
       async () => {
         await treeDataProvider.selectComparisonBranch();
+      }
+    )
+  );
+
+  // Register the per-file diff command
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "gitChangedFiles.openDiff",
+      async (item: FileItem) => {
+        if (!(item instanceof FileItem)) {
+          return;
+        }
+
+        if (!checkGitRepository(item.workspaceRoot)) {
+          return;
+        }
+
+        const comparisonBranch =
+          treeDataProvider.selectedComparisonBranch ??
+          (await getDefaultSourceBranch(item.workspaceRoot));
+
+        try {
+          await openFileDiff(item, comparisonBranch);
+        } catch (error) {
+          console.error("Error opening diff:", error);
+          vscode.window.showErrorMessage(`Failed to open diff: ${error}`);
+        }
       }
     )
   );
