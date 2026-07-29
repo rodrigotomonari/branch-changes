@@ -164,6 +164,31 @@ export function getUnstagedFiles(workspaceRoot: string): Promise<string[]> {
 }
 
 /**
+ * Get untracked files in the repository
+ * @param workspaceRoot Path to the workspace root
+ * @returns Promise with an array of untracked file paths
+ */
+export function getUntrackedFiles(workspaceRoot: string): Promise<string[]> {
+  if (!isGitRepository(workspaceRoot)) {
+    return Promise.resolve([]);
+  }
+
+  return executeGitCommand(
+    "git ls-files --others --exclude-standard",
+    workspaceRoot
+  )
+    .then((output) => {
+      const files = output.split("\n").filter((line) => line !== "");
+      console.log("Untracked files:", files);
+      return files;
+    })
+    .catch((error) => {
+      console.log("Git error getting untracked files:", error);
+      return [];
+    });
+}
+
+/**
  * Get files changed between current branch and source branch
  * @param workspaceRoot Path to the workspace root
  * @param sourceBranch Source branch to compare against

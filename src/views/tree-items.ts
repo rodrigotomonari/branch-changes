@@ -8,6 +8,7 @@ export enum FileStatus {
   STAGED = "staged",
   UNSTAGED = "unstaged",
   COMMITTED = "committed",
+  UNTRACKED = "untracked",
 }
 
 /**
@@ -76,10 +77,19 @@ export class FileItem extends vscode.TreeItem {
       case FileStatus.COMMITTED:
         statusChar = "C";
         statusColor = new vscode.ThemeColor(
-          "gitDecoration.untrackedResourceForeground"
+          "gitDecoration.renamedResourceForeground"
         );
         this.contextValue = "committedFile";
         tooltipText = "Committed changes";
+        break;
+
+      case FileStatus.UNTRACKED:
+        statusChar = "?";
+        statusColor = new vscode.ThemeColor(
+          "gitDecoration.untrackedResourceForeground"
+        );
+        this.contextValue = "untrackedFile";
+        tooltipText = "Untracked file";
         break;
     }
 

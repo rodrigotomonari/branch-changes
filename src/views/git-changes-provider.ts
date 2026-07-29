@@ -12,6 +12,7 @@ import {
   getStagedFiles,
   getUnstagedFiles,
   getCommittedFiles,
+  getUntrackedFiles,
 } from "../git/git-utils";
 
 /**
@@ -207,11 +208,13 @@ export class GitChangedFilesProvider
         workspaceRoot,
         this.selectedComparisonBranch!
       );
+      const untrackedFiles = await getUntrackedFiles(workspaceRoot);
 
       // Add all files to the folder structure
       this.addFilesToTree(stagedFiles, FileStatus.STAGED, workspaceRoot);
       this.addFilesToTree(unstagedFiles, FileStatus.UNSTAGED, workspaceRoot);
       this.addFilesToTree(committedFiles, FileStatus.COMMITTED, workspaceRoot);
+      this.addFilesToTree(untrackedFiles, FileStatus.UNTRACKED, workspaceRoot);
     } catch (error) {
       console.error("Error building file tree:", error);
     }
