@@ -113,6 +113,22 @@ suite("GitChangedFilesProvider", () => {
     assert.ok(findFile(afterRefresh, "later.txt"));
   });
 
+  test("concurrent getChildren() calls don't race on a half-built tree", async () => {
+    writeFile(root, "untracked.txt", "content");
+
+    // Regression test: buildFileTree() used to publish an empty rootFolder
+    // synchronously before the git commands resolved, so a getChildren()
+    // call that landed mid-build would see it as "already built" and
+    // wrongly return "No changes detected".
+    const [first, second] = await Promise.all([
+      provider.getChildren(),
+      provider.getChildren(),
+    ]);
+
+    assert.ok(findFile(first, "untracked.txt"));
+    assert.ok(findFile(second, "untracked.txt"));
+  });
+
   test("selectComparisonBranch updates the selection and refreshes", async () => {
     run(root, "git branch feature");
     const originalShowQuickPick = vscode.window.showQuickPick;

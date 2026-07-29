@@ -70,14 +70,6 @@ function setupWorkspaceListeners(
   context: vscode.ExtensionContext,
   treeDataProvider: GitChangedFilesProvider
 ): void {
-  // Refresh when the active editor changes
-  context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor(() => {
-      console.log("Active editor changed, refreshing view");
-      treeDataProvider.refresh();
-    })
-  );
-
   // Refresh when files are saved with a small delay
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((document) => {

@@ -30,6 +30,11 @@ export class GitChangedFilesProvider
   // Root folder for the file tree
   private rootFolder: FolderItem | null = null;
 
+  // In-flight tree build, shared so concurrent getChildren() calls don't
+  // each kick off their own set of git commands and don't see a
+  // half-populated rootFolder as "already built".
+  private buildPromise: Promise<void> | null = null;
+
   private _onDidChangeTreeData: vscode.EventEmitter<
     vscode.TreeItem | null | undefined
   > = new vscode.EventEmitter<vscode.TreeItem | null | undefined>();
@@ -157,9 +162,17 @@ export class GitChangedFilesProvider
       branchSelectorItem.iconPath = new vscode.ThemeIcon("git-branch");
       branchSelectorItem.contextValue = "branchSelector";
 
-      // Build or get the file tree
+      // Build or get the file tree. Concurrent callers share the same
+      // in-flight build instead of each triggering their own git commands.
       if (!this.rootFolder) {
-        await this.buildFileTree(workspaceRoot);
+        if (!this.buildPromise) {
+          this.buildPromise = this.buildFileTree(workspaceRoot).finally(
+            () => {
+              this.buildPromise = null;
+            }
+          );
+        }
+        await this.buildPromise;
       }
 
       if (this.rootFolder && this.rootFolder.children.size > 0) {
@@ -197,8 +210,10 @@ export class GitChangedFilesProvider
    * Build the file tree structure
    */
   private async buildFileTree(workspaceRoot: string): Promise<void> {
-    // Create root folder
-    this.rootFolder = new FolderItem("root", "");
+    // Build into a local folder and only publish it to this.rootFolder once
+    // fully populated, so a concurrent getChildren() call never observes a
+    // "built" but still-empty tree while the git commands below are running.
+    const root = new FolderItem("root", "");
 
     try {
       // Get all changed files
@@ -211,19 +226,37 @@ export class GitChangedFilesProvider
       const untrackedFiles = await getUntrackedFiles(workspaceRoot);
 
       // Add all files to the folder structure
-      this.addFilesToTree(stagedFiles, FileStatus.STAGED, workspaceRoot);
-      this.addFilesToTree(unstagedFiles, FileStatus.UNSTAGED, workspaceRoot);
-      this.addFilesToTree(committedFiles, FileStatus.COMMITTED, workspaceRoot);
-      this.addFilesToTree(untrackedFiles, FileStatus.UNTRACKED, workspaceRoot);
+      this.addFilesToTree(root, stagedFiles, FileStatus.STAGED, workspaceRoot);
+      this.addFilesToTree(
+        root,
+        unstagedFiles,
+        FileStatus.UNSTAGED,
+        workspaceRoot
+      );
+      this.addFilesToTree(
+        root,
+        committedFiles,
+        FileStatus.COMMITTED,
+        workspaceRoot
+      );
+      this.addFilesToTree(
+        root,
+        untrackedFiles,
+        FileStatus.UNTRACKED,
+        workspaceRoot
+      );
     } catch (error) {
       console.error("Error building file tree:", error);
     }
+
+    this.rootFolder = root;
   }
 
   /**
    * Add files to the tree structure
    */
   private addFilesToTree(
+    root: FolderItem,
     files: string[],
     status: FileStatus,
     workspaceRoot: string
@@ -237,10 +270,10 @@ export class GitChangedFilesProvider
 
       // If it's a file in the root directory
       if (pathParts.length === 1) {
-        this.rootFolder!.children.set(filePath, fileItem);
+        root.children.set(filePath, fileItem);
       } else {
         // Add to the appropriate subfolder
-        this.rootFolder!.addChild(pathParts, fileItem);
+        root.addChild(pathParts, fileItem);
       }
     }
   }
