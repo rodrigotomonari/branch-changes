@@ -42,10 +42,6 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "branch-changes.helloWorld",
-        "title": "Hello World"
-      },
-      {
         "command": "gitChangedFiles.selectBranch",
         "title": "Select Comparison Branch",
         "icon": "$(git-branch)"
