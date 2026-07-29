@@ -28,7 +28,7 @@ Install this extension directly from the VS Code Marketplace:
 
 Or install using the VS Code Quick Open (Ctrl+P):
 
-```
+```text
 ext install branch-changes
 ```
 
