@@ -4,6 +4,16 @@ import { GitExtension, API } from "../git";
 import { isGitRepository } from "../utils/workspace";
 
 /**
+ * Environment for every Git command we run.
+ *
+ * GIT_OPTIONAL_LOCKS=0 keeps read-only commands from taking the index lock and
+ * writing a refreshed `.git/index`. Without it our own reads look like
+ * repository activity to the built-in Git extension, which re-runs `git status`
+ * and fires a state change, which makes us read again — a refresh loop.
+ */
+const GIT_ENV = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
+
+/**
  * Execute a Git command and return the result as a Promise
  * @param command Git command to execute
  * @param workspaceRoot Path to the workspace root
@@ -22,7 +32,7 @@ export function executeGitCommand(
 
     console.log(`Executing Git command: ${command}`);
 
-    exec(command, { cwd: workspaceRoot }, (error, stdout, stderr) => {
+    exec(command, { cwd: workspaceRoot, env: GIT_ENV }, (error, stdout, stderr) => {
       if (error) {
         console.log("Git error:", error);
         console.log("stderr:", stderr);
@@ -190,72 +200,106 @@ export async function getDefaultSourceBranch(
 }
 
 /**
- * Get staged files in the repository
- * @param workspaceRoot Path to the workspace root
- * @returns Promise with an array of staged file paths
+ * Working tree state, split the way the tree view presents it
  */
-export function getStagedFiles(workspaceRoot: string): Promise<string[]> {
-  if (!isGitRepository(workspaceRoot)) {
-    return Promise.resolve([]);
-  }
-
-  return executeGitCommand("git diff --name-only --cached", workspaceRoot)
-    .then((output) => {
-      const files = output.split("\n").filter((line) => line !== "");
-      console.log("Staged files:", files);
-      return files;
-    })
-    .catch((error) => {
-      console.log("Git error getting staged files:", error);
-      return [];
-    });
+export interface WorkingTreeChanges {
+  staged: string[];
+  unstaged: string[];
+  untracked: string[];
 }
 
 /**
- * Get unstaged files in the repository
+ * Get the staged, unstaged, and untracked files in one pass.
+ *
+ * `git status --porcelain -z` answers all three at once, and unlike
+ * `git diff --name-only` it never writes a refreshed index (see GIT_ENV), so
+ * reading the tree can't be mistaken for repository activity. The -z form
+ * emits NUL-separated records with literal, unquoted paths.
  * @param workspaceRoot Path to the workspace root
- * @returns Promise with an array of unstaged file paths
  */
-export function getUnstagedFiles(workspaceRoot: string): Promise<string[]> {
+export function getWorkingTreeChanges(
+  workspaceRoot: string
+): Promise<WorkingTreeChanges> {
+  const changes: WorkingTreeChanges = {
+    staged: [],
+    unstaged: [],
+    untracked: [],
+  };
+
   if (!isGitRepository(workspaceRoot)) {
-    return Promise.resolve([]);
+    return Promise.resolve(changes);
   }
 
-  return executeGitCommand("git diff --name-only", workspaceRoot)
-    .then((output) => {
-      const files = output.split("\n").filter((line) => line !== "");
-      console.log("Unstaged files:", files);
-      return files;
-    })
-    .catch((error) => {
-      console.log("Git error getting unstaged files:", error);
-      return [];
-    });
+  return new Promise((resolve) => {
+    // execFile rather than executeGitCommand: the output must not be trimmed,
+    // because the first status code of a line is a meaningful space.
+    execFile(
+      "git",
+      // --untracked-files=all lists each untracked file; the default collapses
+      // a new directory into a single "dir/" entry, which the tree can't show.
+      ["status", "--porcelain", "-z", "--untracked-files=all"],
+      { cwd: workspaceRoot, env: GIT_ENV, maxBuffer: 100 * 1024 * 1024 },
+      (error, stdout) => {
+        if (error) {
+          console.log("Git error getting working tree changes:", error);
+          resolve(changes);
+          return;
+        }
+
+        resolve(parseStatusRecords(stdout));
+      }
+    );
+  });
 }
 
 /**
- * Get untracked files in the repository
- * @param workspaceRoot Path to the workspace root
- * @returns Promise with an array of untracked file paths
+ * Parse the NUL-separated records of `git status --porcelain -z`
+ * @param output Raw stdout of the status command
  */
-export function getUntrackedFiles(workspaceRoot: string): Promise<string[]> {
-  if (!isGitRepository(workspaceRoot)) {
-    return Promise.resolve([]);
+function parseStatusRecords(output: string): WorkingTreeChanges {
+  const changes: WorkingTreeChanges = {
+    staged: [],
+    unstaged: [],
+    untracked: [],
+  };
+
+  const records = output.split("\0");
+
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+
+    // Each record is "XY <path>": X is the index status, Y the working tree
+    // status, either of which may be a space.
+    if (record.length < 4) {
+      continue;
+    }
+
+    const indexStatus = record[0];
+    const workTreeStatus = record[1];
+    const filePath = record.slice(3);
+
+    if (indexStatus === "?" && workTreeStatus === "?") {
+      changes.untracked.push(filePath);
+      continue;
+    }
+
+    // A rename or copy is followed by an extra record holding the original
+    // path, which we don't display; skip it so it isn't read as an entry.
+    if (indexStatus === "R" || indexStatus === "C") {
+      i++;
+    }
+
+    if (indexStatus !== " " && indexStatus !== "?") {
+      changes.staged.push(filePath);
+    }
+
+    if (workTreeStatus !== " " && workTreeStatus !== "?") {
+      changes.unstaged.push(filePath);
+    }
   }
 
-  return executeGitCommand(
-    "git ls-files --others --exclude-standard",
-    workspaceRoot
-  )
-    .then((output) => {
-      const files = output.split("\n").filter((line) => line !== "");
-      console.log("Untracked files:", files);
-      return files;
-    })
-    .catch((error) => {
-      console.log("Git error getting untracked files:", error);
-      return [];
-    });
+  console.log("Working tree changes:", changes);
+  return changes;
 }
 
 /**

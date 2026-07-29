@@ -62,8 +62,20 @@ async function setupGitApiWatcher(
   }
 
   const watchRepository = (repo: Repository): void => {
+    // The Git extension fires this after every `git status` it runs, whether or
+    // not the result differs, so compare against the last state we acted on and
+    // ignore the no-ops.
+    let lastFingerprint = fingerprintRepository(repo);
+
     context.subscriptions.push(
       repo.state.onDidChange(() => {
+        const fingerprint = fingerprintRepository(repo);
+
+        if (fingerprint === lastFingerprint) {
+          return;
+        }
+
+        lastFingerprint = fingerprint;
         console.log("Repository state changed, refreshing view");
         refreshCallback();
       })
@@ -77,6 +89,29 @@ async function setupGitApiWatcher(
   gitAPI.repositories.forEach(watchRepository);
 
   context.subscriptions.push(gitAPI.onDidOpenRepository(watchRepository));
+}
+
+/**
+ * Summarise everything about a repository that the tree view depends on:
+ * HEAD, every ref (so a fetch moving the comparison branch counts), and the
+ * three change lists. Anything else the Git extension tracks — remotes,
+ * submodules, an index rewritten with identical content — leaves this the same.
+ * @param repo Repository to summarise
+ */
+function fingerprintRepository(repo: Repository): string {
+  const { HEAD, refs, indexChanges, workingTreeChanges, mergeChanges } =
+    repo.state;
+
+  const changes = [...indexChanges, ...workingTreeChanges, ...mergeChanges]
+    .map((change) => `${change.status}:${change.uri.fsPath}`)
+    .sort();
+
+  return JSON.stringify([
+    HEAD?.name,
+    HEAD?.commit,
+    refs.map((ref) => `${ref.name}:${ref.commit}`).sort(),
+    changes,
+  ]);
 }
 
 /**

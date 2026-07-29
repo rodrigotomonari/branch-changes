@@ -9,10 +9,8 @@ import {
   getCurrentBranch,
   getAllBranches,
   getDefaultSourceBranch,
-  getStagedFiles,
-  getUnstagedFiles,
+  getWorkingTreeChanges,
   getCommittedFiles,
-  getUntrackedFiles,
 } from "../git/git-utils";
 
 /**
@@ -254,34 +252,24 @@ export class GitChangedFilesProvider
 
     try {
       // Get all changed files
-      const stagedFiles = await getStagedFiles(workspaceRoot);
-      const unstagedFiles = await getUnstagedFiles(workspaceRoot);
+      const { staged, unstaged, untracked } = await getWorkingTreeChanges(
+        workspaceRoot
+      );
       const committedFiles = await getCommittedFiles(
         workspaceRoot,
         this.selectedComparisonBranch!
       );
-      const untrackedFiles = await getUntrackedFiles(workspaceRoot);
 
       // Add all files to the folder structure
-      this.addFilesToTree(root, stagedFiles, FileStatus.STAGED, workspaceRoot);
-      this.addFilesToTree(
-        root,
-        unstagedFiles,
-        FileStatus.UNSTAGED,
-        workspaceRoot
-      );
+      this.addFilesToTree(root, staged, FileStatus.STAGED, workspaceRoot);
+      this.addFilesToTree(root, unstaged, FileStatus.UNSTAGED, workspaceRoot);
       this.addFilesToTree(
         root,
         committedFiles,
         FileStatus.COMMITTED,
         workspaceRoot
       );
-      this.addFilesToTree(
-        root,
-        untrackedFiles,
-        FileStatus.UNTRACKED,
-        workspaceRoot
-      );
+      this.addFilesToTree(root, untracked, FileStatus.UNTRACKED, workspaceRoot);
     } catch (error) {
       console.error("Error building file tree:", error);
     }

@@ -1,11 +1,11 @@
 import * as assert from "assert";
+import * as fs from "fs";
+import * as path from "path";
 import {
   getCurrentBranch,
   getAllBranches,
   getDefaultSourceBranch,
-  getStagedFiles,
-  getUnstagedFiles,
-  getUntrackedFiles,
+  getWorkingTreeChanges,
   getCommittedFiles,
   getMergeBase,
   getFileAtRevision,
@@ -48,22 +48,83 @@ suite("git-utils", () => {
     assert.deepStrictEqual(branches.sort(), ["feature", "main"]);
   });
 
-  test("getStagedFiles returns files added to the index but not committed", async () => {
+  test("getWorkingTreeChanges classifies staged, unstaged, and untracked files", async () => {
     writeFile(repoDir, "staged.txt", "content");
     run(repoDir, "git add staged.txt");
-    assert.deepStrictEqual(await getStagedFiles(repoDir), ["staged.txt"]);
-  });
-
-  test("getUnstagedFiles returns modified tracked files", async () => {
     writeFile(repoDir, "README.md", "changed\n");
-    assert.deepStrictEqual(await getUnstagedFiles(repoDir), ["README.md"]);
+    writeFile(repoDir, "untracked.txt", "content");
+
+    assert.deepStrictEqual(await getWorkingTreeChanges(repoDir), {
+      staged: ["staged.txt"],
+      unstaged: ["README.md"],
+      untracked: ["untracked.txt"],
+    });
   });
 
-  test("getUntrackedFiles returns files git doesn't know about", async () => {
-    writeFile(repoDir, "untracked.txt", "content");
-    assert.deepStrictEqual(await getUntrackedFiles(repoDir), [
-      "untracked.txt",
+  test("getWorkingTreeChanges reports a file that is both staged and modified", async () => {
+    writeFile(repoDir, "README.md", "staged change\n");
+    run(repoDir, "git add README.md");
+    writeFile(repoDir, "README.md", "and an unstaged one\n");
+
+    assert.deepStrictEqual(await getWorkingTreeChanges(repoDir), {
+      staged: ["README.md"],
+      unstaged: ["README.md"],
+      untracked: [],
+    });
+  });
+
+  test("getWorkingTreeChanges reports deletions", async () => {
+    run(repoDir, "git rm -q README.md");
+
+    assert.deepStrictEqual(await getWorkingTreeChanges(repoDir), {
+      staged: ["README.md"],
+      unstaged: [],
+      untracked: [],
+    });
+  });
+
+  test("getWorkingTreeChanges reports a rename under its new path", async () => {
+    run(repoDir, "git mv README.md RENAMED.md");
+
+    assert.deepStrictEqual(await getWorkingTreeChanges(repoDir), {
+      staged: ["RENAMED.md"],
+      unstaged: [],
+      untracked: [],
+    });
+  });
+
+  test("getWorkingTreeChanges handles paths with spaces and quotes", async () => {
+    // The -z output is unquoted, so these must come through verbatim rather
+    // than as git's C-escaped "with \"quotes\".txt" form.
+    writeFile(repoDir, 'with "quotes".txt', "content");
+    writeFile(repoDir, "with space.txt", "content");
+
+    const changes = await getWorkingTreeChanges(repoDir);
+
+    assert.deepStrictEqual(changes.untracked.sort(), [
+      'with "quotes".txt',
+      "with space.txt",
     ]);
+  });
+
+  test("getWorkingTreeChanges ignores a touched file whose content is unchanged", async () => {
+    // Reading the tree must not report false positives, and must not rewrite
+    // .git/index either: that write is what made the Git extension re-run
+    // status, which fed back into another refresh.
+    const indexPath = path.join(repoDir, ".git", "index");
+    run(repoDir, "touch README.md");
+    const before = fs.statSync(indexPath).mtimeMs;
+
+    assert.deepStrictEqual(await getWorkingTreeChanges(repoDir), {
+      staged: [],
+      unstaged: [],
+      untracked: [],
+    });
+    assert.strictEqual(
+      fs.statSync(indexPath).mtimeMs,
+      before,
+      "reading the working tree must not write .git/index"
+    );
   });
 
   test("getCommittedFiles diffs against the merge base of the source branch", async () => {
