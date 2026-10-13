@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { FileItem, FileStatus } from "../views/tree-items";
-import { getFileAtRevision, getMergeBase } from "./git-utils";
+import { formatRef, getFileAtRevision, getMergeBase } from "./git-utils";
 
 /**
  * URI scheme for read-only documents holding a file at a past revision.
@@ -75,7 +75,8 @@ async function fileExists(fileUri: vscode.Uri): Promise<boolean> {
  * Open a diff editor showing everything that changed in a file on this branch
  * (committed, staged and unstaged) compared with the comparison branch.
  * @param item The file item to diff
- * @param comparisonBranch Branch the current branch is being compared against
+ * @param comparisonBranch Branch or commit hash the current branch is being
+ *        compared against
  */
 export async function openFileDiff(
   item: FileItem,
@@ -94,7 +95,9 @@ export async function openFileDiff(
 
   if (!mergeBase) {
     vscode.window.showErrorMessage(
-      `Could not find a common ancestor between HEAD and ${comparisonBranch}.`
+      `Could not find a common ancestor between HEAD and ${formatRef(
+        comparisonBranch
+      )}.`
     );
     return;
   }
@@ -110,7 +113,7 @@ export async function openFileDiff(
     "vscode.diff",
     toRevisionUri(item, mergeBase),
     rightUri,
-    `${fileName} (${comparisonBranch} ↔ Working Tree)`,
+    `${fileName} (${formatRef(comparisonBranch)} ↔ Working Tree)`,
     { preview: true } as vscode.TextDocumentShowOptions
   );
 }

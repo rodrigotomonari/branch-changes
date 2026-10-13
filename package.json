@@ -43,7 +43,7 @@
       },
       {
         "command": "gitChangedFiles.selectBranch",
-        "title": "Select Comparison Branch",
+        "title": "Select Comparison Branch or Commit",
         "icon": "$(git-branch)"
       },
       {
