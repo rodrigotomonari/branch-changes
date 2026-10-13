@@ -11,6 +11,9 @@ import {
   getDefaultSourceBranch,
   getWorkingTreeChanges,
   getCommittedFiles,
+  resolveCommit,
+  isCommitHash,
+  formatRef,
 } from "../git/git-utils";
 
 /**
@@ -23,7 +26,7 @@ export class GitChangedFilesProvider
   // rebuilding. Also gives git time to finish writing after a save.
   private static readonly REFRESH_DEBOUNCE_MS = 300;
 
-  // Store selected comparison branch
+  // Store selected comparison branch, or the full hash of a selected commit
   selectedComparisonBranch: string | null = null;
 
   // Root folder for the file tree
@@ -99,7 +102,32 @@ export class GitChangedFilesProvider
   }
 
   /**
-   * Show branch selection dialog and update the selected branch
+   * Ask the user for a commit id, re-prompting until it names a commit
+   * @returns The full commit hash, or undefined if the user cancelled
+   */
+  private async promptForCommit(
+    workspaceRoot: string
+  ): Promise<string | undefined> {
+    const input = await vscode.window.showInputBox({
+      title: "Select Comparison Commit",
+      prompt: "Enter a commit id (a tag or other revision also works)",
+      placeHolder: "e.g. 1a2b3c4",
+      ignoreFocusOut: true,
+      validateInput: async (value) =>
+        (await resolveCommit(workspaceRoot, value))
+          ? undefined
+          : "No commit found for this id",
+    });
+
+    if (input === undefined) {
+      return undefined;
+    }
+
+    return (await resolveCommit(workspaceRoot, input)) ?? undefined;
+  }
+
+  /**
+   * Show branch selection dialog and update the selected branch or commit
    */
   async selectComparisonBranch(): Promise<void> {
     const workspaceRoot = getWorkspaceRoot();
@@ -138,14 +166,34 @@ export class GitChangedFilesProvider
         picked: branch === defaultBranch,
       }));
 
-      // Show the branch selection dialog
-      const selectedBranch = await vscode.window.showQuickPick(quickPickItems, {
-        placeHolder: `Select a branch to compare with ${currentBranch}`,
-        title: "Select Comparison Branch",
-      });
+      // alwaysShow keeps this entry visible while the user filters the list,
+      // e.g. after pasting a commit id that no branch name matches
+      const enterCommitItem: vscode.QuickPickItem = {
+        label: "$(git-commit) Enter a commit id…",
+        description: "Compare with a specific commit",
+        alwaysShow: true,
+      };
 
-      if (selectedBranch) {
-        this.selectedComparisonBranch = selectedBranch.label;
+      // Show the branch selection dialog
+      const selected = await vscode.window.showQuickPick(
+        [enterCommitItem, ...quickPickItems],
+        {
+          placeHolder: `Select a branch or commit to compare with ${currentBranch}`,
+          title: "Select Comparison Branch or Commit",
+        }
+      );
+
+      if (!selected) {
+        return;
+      }
+
+      const comparisonRef =
+        selected === enterCommitItem
+          ? await this.promptForCommit(workspaceRoot)
+          : selected.label;
+
+      if (comparisonRef) {
+        this.selectedComparisonBranch = comparisonRef;
         console.log(
           `Set comparison branch to: ${this.selectedComparisonBranch}`
         );
@@ -191,11 +239,17 @@ export class GitChangedFilesProvider
 
       // Add a branch selector item at the top of the tree
       const branchSelectorItem = new vscode.TreeItem(
-        `${this.selectedComparisonBranch}`,
+        formatRef(this.selectedComparisonBranch),
         vscode.TreeItemCollapsibleState.None
       );
-      branchSelectorItem.iconPath = new vscode.ThemeIcon("git-branch");
+      const isCommit = isCommitHash(this.selectedComparisonBranch);
+      branchSelectorItem.iconPath = new vscode.ThemeIcon(
+        isCommit ? "git-commit" : "git-branch"
+      );
       branchSelectorItem.contextValue = "branchSelector";
+      if (isCommit) {
+        branchSelectorItem.tooltip = this.selectedComparisonBranch;
+      }
 
       // Build or get the file tree. Concurrent callers share the same
       // in-flight build instead of each triggering their own git commands.

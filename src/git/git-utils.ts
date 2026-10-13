@@ -302,10 +302,66 @@ function parseStatusRecords(output: string): WorkingTreeChanges {
   return changes;
 }
 
+const FULL_COMMIT_HASH = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+
+/**
+ * Check whether a comparison ref is a full commit hash rather than a branch
+ * name. A selected commit is always stored in this form (see resolveCommit).
+ * @param ref Branch name or commit hash
+ */
+export function isCommitHash(ref: string): boolean {
+  return FULL_COMMIT_HASH.test(ref);
+}
+
+/**
+ * Format a comparison ref for display, abbreviating a commit hash
+ * @param ref Branch name or commit hash
+ */
+export function formatRef(ref: string): string {
+  return isCommitHash(ref) ? ref.slice(0, 7) : ref;
+}
+
+/**
+ * Resolve a user-supplied revision (abbreviated hash, tag, `HEAD~3`, ...) to
+ * the full hash of the commit it names.
+ *
+ * Resolving up front means the rest of the extension only ever sees a plain
+ * hash, which is safe to interpolate into the shell commands built elsewhere
+ * in this file. This uses execFile so the input is never read by a shell.
+ * @param workspaceRoot Path to the workspace root
+ * @param revision Revision typed by the user
+ * @returns Promise with the full commit hash, or null if it doesn't name a
+ *          commit in this repository
+ */
+export function resolveCommit(
+  workspaceRoot: string,
+  revision: string
+): Promise<string | null> {
+  const rev = revision.trim();
+
+  // A leading dash would be parsed by git as an option, not a revision
+  if (!isGitRepository(workspaceRoot) || rev === "" || rev.startsWith("-")) {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    execFile(
+      "git",
+      // ^{commit} rejects revisions that resolve to a non-commit object, such
+      // as the hash of a blob or tree.
+      ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`],
+      { cwd: workspaceRoot, env: GIT_ENV },
+      (error, stdout) => {
+        resolve(error ? null : stdout.trim() || null);
+      }
+    );
+  });
+}
+
 /**
  * Get the common ancestor commit between HEAD and the source branch
  * @param workspaceRoot Path to the workspace root
- * @param sourceBranch Source branch to compare against
+ * @param sourceBranch Source branch (or commit hash) to compare against
  * @returns Promise with the merge base commit hash, or null if it can't be found
  */
 export function getMergeBase(
@@ -376,7 +432,7 @@ export function getFileAtRevision(
 /**
  * Get files changed between current branch and source branch
  * @param workspaceRoot Path to the workspace root
- * @param sourceBranch Source branch to compare against
+ * @param sourceBranch Source branch (or commit hash) to compare against
  * @returns Promise with an array of committed file paths
  */
 export function getCommittedFiles(

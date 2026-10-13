@@ -190,4 +190,62 @@ suite("GitChangedFilesProvider", () => {
 
     assert.strictEqual(provider.selectedComparisonBranch, "feature");
   });
+
+  /**
+   * Run selectComparisonBranch() as a user who picks "Enter a commit id…" and
+   * then answers the input box with `answer` (undefined means they cancel).
+   * Both pickers are native UI that a script can't drive, so they're stubbed.
+   */
+  async function selectCommitWith(answer: string | undefined): Promise<void> {
+    const originalShowQuickPick = vscode.window.showQuickPick;
+    const originalShowInputBox = vscode.window.showInputBox;
+    (vscode.window as { showQuickPick: unknown }).showQuickPick = async (
+      items: { label: string }[]
+    ) => items.find((item) => item.label.includes("Enter a commit id"));
+    (vscode.window as { showInputBox: unknown }).showInputBox = async () =>
+      answer;
+
+    try {
+      await provider.selectComparisonBranch();
+    } finally {
+      vscode.window.showQuickPick = originalShowQuickPick;
+      vscode.window.showInputBox = originalShowInputBox;
+    }
+  }
+
+  test("selectComparisonBranch stores the full hash of an entered commit", async () => {
+    const baseCommit = run(root, "git rev-parse HEAD");
+    run(root, "git checkout -q -b feature");
+    writeFile(root, "feature.txt", "content");
+    run(root, "git add feature.txt");
+    run(root, 'git commit -q -m "add feature file"');
+
+    await selectCommitWith(baseCommit.slice(0, 7));
+
+    assert.strictEqual(provider.selectedComparisonBranch, baseCommit);
+  });
+
+  test("selectComparisonBranch keeps the selection when the commit prompt is cancelled", async () => {
+    await selectCommitWith(undefined);
+
+    assert.strictEqual(provider.selectedComparisonBranch, "main");
+  });
+
+  test("a selected commit is shown abbreviated and compared against", async () => {
+    const baseCommit = run(root, "git rev-parse HEAD");
+    run(root, "git checkout -q -b feature");
+    writeFile(root, "feature.txt", "content");
+    run(root, "git add feature.txt");
+    run(root, 'git commit -q -m "add feature file"');
+    provider.selectedComparisonBranch = baseCommit;
+
+    const items = await provider.getChildren();
+
+    assert.strictEqual(items[0].label, baseCommit.slice(0, 7));
+    assert.strictEqual(items[0].tooltip, baseCommit);
+    assert.strictEqual(
+      findFile(items, "feature.txt")?.status,
+      FileStatus.COMMITTED
+    );
+  });
 });

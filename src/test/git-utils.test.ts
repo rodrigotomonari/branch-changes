@@ -9,6 +9,9 @@ import {
   getCommittedFiles,
   getMergeBase,
   getFileAtRevision,
+  resolveCommit,
+  isCommitHash,
+  formatRef,
 } from "../git/git-utils";
 import { isGitRepository } from "../utils/workspace";
 import {
@@ -152,6 +155,73 @@ suite("git-utils", () => {
     assert.strictEqual(await getMergeBase(repoDir, "no-such-branch"), null);
   });
 
+  test("getCommittedFiles and getMergeBase accept a commit hash", async () => {
+    const baseCommit = run(repoDir, "git rev-parse HEAD");
+    writeFile(repoDir, "second.txt", "content");
+    run(repoDir, "git add second.txt");
+    run(repoDir, 'git commit -q -m "second commit"');
+    writeFile(repoDir, "third.txt", "content");
+    run(repoDir, "git add third.txt");
+    run(repoDir, 'git commit -q -m "third commit"');
+
+    // Everything after the chosen commit, but not the commit itself
+    assert.deepStrictEqual(await getCommittedFiles(repoDir, baseCommit), [
+      "second.txt",
+      "third.txt",
+    ]);
+    assert.strictEqual(await getMergeBase(repoDir, baseCommit), baseCommit);
+  });
+
+  test("resolveCommit expands an abbreviated hash to the full hash", async () => {
+    const fullHash = run(repoDir, "git rev-parse HEAD");
+
+    assert.strictEqual(
+      await resolveCommit(repoDir, fullHash.slice(0, 7)),
+      fullHash
+    );
+    assert.strictEqual(await resolveCommit(repoDir, `  ${fullHash}\n`), fullHash);
+  });
+
+  test("resolveCommit resolves other revisions to a commit", async () => {
+    const baseCommit = run(repoDir, "git rev-parse HEAD");
+    run(repoDir, "git tag v1");
+    writeFile(repoDir, "second.txt", "content");
+    run(repoDir, "git add second.txt");
+    run(repoDir, 'git commit -q -m "second commit"');
+
+    assert.strictEqual(await resolveCommit(repoDir, "v1"), baseCommit);
+    assert.strictEqual(await resolveCommit(repoDir, "HEAD~1"), baseCommit);
+  });
+
+  test("resolveCommit returns null for anything that isn't a commit", async () => {
+    const treeHash = run(repoDir, "git rev-parse HEAD^{tree}");
+
+    assert.strictEqual(await resolveCommit(repoDir, "0123456789abcdef"), null);
+    assert.strictEqual(await resolveCommit(repoDir, "no-such-revision"), null);
+    assert.strictEqual(await resolveCommit(repoDir, treeHash), null);
+    assert.strictEqual(await resolveCommit(repoDir, ""), null);
+    assert.strictEqual(await resolveCommit(repoDir, "   "), null);
+  });
+
+  test("resolveCommit never reads the input as an option or a shell command", async () => {
+    const marker = path.join(repoDir, "injected");
+
+    assert.strictEqual(await resolveCommit(repoDir, "--all"), null);
+    assert.strictEqual(await resolveCommit(repoDir, `HEAD; touch ${marker}`), null);
+    assert.strictEqual(await resolveCommit(repoDir, `$(touch ${marker})`), null);
+    assert.strictEqual(fs.existsSync(marker), false);
+  });
+
+  test("isCommitHash and formatRef distinguish hashes from branch names", () => {
+    const fullHash = "0123456789abcdef0123456789abcdef01234567";
+
+    assert.strictEqual(isCommitHash(fullHash), true);
+    assert.strictEqual(isCommitHash("main"), false);
+    assert.strictEqual(isCommitHash("0123456"), false);
+    assert.strictEqual(formatRef(fullHash), "0123456");
+    assert.strictEqual(formatRef("feature/my-work"), "feature/my-work");
+  });
+
   test("getFileAtRevision returns the file contents at that revision", async () => {
     writeFile(repoDir, "README.md", "changed\n");
 
@@ -274,6 +344,10 @@ suite("git-utils outside a repository", () => {
 
   test("getMergeBase resolves to null", async () => {
     assert.strictEqual(await getMergeBase(plainDir, "main"), null);
+  });
+
+  test("resolveCommit resolves to null", async () => {
+    assert.strictEqual(await resolveCommit(plainDir, "HEAD"), null);
   });
 
   test("getFileAtRevision resolves to an empty string", async () => {

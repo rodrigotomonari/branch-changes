@@ -10,7 +10,7 @@ Branch Changes is a simple VS Code extension that helps developers track and vis
 
 - 🔍 **Real-time Change Tracking**: Automatically updates when files change, branches switch, or files are saved
 - 🌳 **Hierarchical View**: Files are organized by folder structure for easier navigation
-- 🔄 **Compare Any Two Branches**: Select which branch to compare against (defaults to main/master)
+- 🔄 **Compare Against a Branch or Commit**: Select which branch to compare against (defaults to main/master), or enter a commit id
 - 📊 **Color-coded Status**: Quickly identify staged, unstaged, and committed changes
 - ⚡ **Auto-detection**: Automatically finds the most appropriate source branch
 - 🖱️ **Click to Open**: Files open directly when clicked
@@ -43,14 +43,14 @@ See [CLAUDE.md](CLAUDE.md) for the full list of build/lint/test commands.
 The extension automatically adds a "Changed Files" view to your Explorer panel. From there, you can:
 
 - **View Changed Files**: All modified files are shown in a tree view, organized by status and directory structure
-- **Select Comparison Branch**: Click the branch selector at the top of the view to choose which branch to compare against
+- **Select Comparison Branch or Commit**: Click the branch selector at the top of the view to choose which branch to compare against, or pick "Enter a commit id…" to compare against a specific commit. The view then shows everything changed since that commit
 - **Open Files**: Click on any file to open it in the editor
 - **Monitor Changes**: The view automatically refreshes when you make changes or switch branches
 
 ### Commands
 
 - `Refresh Changed Files`: Manually refresh the changed files view
-- `Select Comparison Branch`: Open a dropdown to select which branch to compare against
+- `Select Comparison Branch or Commit`: Open a dropdown to select which branch to compare against, or enter a commit id
 
 ## Requirements
 
